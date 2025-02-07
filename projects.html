@@ -1,0 +1,575 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>NextAction Manager</title>
+  <!-- Tailwind CSS CDN -->
+  <script src="https://cdn.tailwindcss.com"></script>
+  <style>
+    /* モーダルオーバーレイ */
+    #modal-overlay {
+      background: rgba(0, 0, 0, 0.5);
+    }
+    /* ドラッグ中のスタイル */
+    .dragging {
+      opacity: 0.5;
+    }
+  </style>
+</head>
+<body class="bg-gray-100 text-gray-900">
+  <!-- ヘッダー -->
+  <header class="bg-white shadow border-b">
+    <div class="container mx-auto py-4 px-6 flex items-center justify-between">
+      <h1 class="text-2xl font-bold cursor-pointer" onclick="navigateToHome()">NextAction Manager</h1>
+      <div class="space-x-3">
+        <span class="text-xs text-indigo-600 hover:underline cursor-pointer" onclick="openImportModal()">インポート</span>
+        <span class="text-xs text-teal-600 hover:underline cursor-pointer" onclick="exportData()">エクスポート</span>
+      </div>
+    </div>
+  </header>
+
+  <main class="container mx-auto px-6 py-8">
+    <!-- 並び替えUI -->
+    <div class="mb-6 flex justify-end space-x-3">
+      <button id="sortModeToggleBtn" class="bg-blue-500 hover:bg-blue-600 text-white py-1 px-4 rounded-full text-xs" onclick="toggleSortMode()">
+        並び順：手動
+      </button>
+      <button id="dueDateOrderToggleBtn" class="bg-blue-500 hover:bg-blue-600 text-white py-1 px-4 rounded-full text-xs hidden" onclick="toggleDueDateOrder()">
+        昇順
+      </button>
+    </div>
+    
+    <!-- プロジェクト登録ボタン -->
+    <div class="mb-8">
+      <button class="bg-green-500 hover:bg-green-600 text-white py-3 px-6 rounded-full text-base" onclick="openProjectForm()">プロジェクト追加</button>
+    </div>
+    
+    <!-- プロジェクト一覧 -->
+    <div id="content" class="space-y-6"></div>
+  </main>
+
+  <!-- モーダル -->
+  <div id="modal-overlay" class="fixed inset-0 flex items-center justify-center hidden z-50">
+    <div class="bg-white rounded-3xl shadow max-w-md w-full p-8">
+      <div class="flex justify-between items-center mb-6">
+        <h3 id="modal-title" class="text-2xl font-bold"></h3>
+        <button class="text-3xl font-bold" onclick="closeModal()">×</button>
+      </div>
+      <div id="modal-body"></div>
+    </div>
+  </div>
+
+  <script>
+    // --- グローバル変数 ---
+    let sortMode = "manual"; // "manual" または "duedate"
+    let dueDateOrder = "asc"; // "asc" または "desc"
+    let draggedProjectId = null;
+
+    // --- ユーティリティ関数 ---
+    function generateId() {
+      return Date.now().toString() + Math.floor(Math.random() * 1000).toString();
+    }
+    function getTomorrowDate() {
+      const d = new Date();
+      d.setDate(d.getDate() + 1);
+      return d.toISOString().split("T")[0];
+    }
+    function loadData(key) {
+      const data = localStorage.getItem(key);
+      return data ? JSON.parse(data) : [];
+    }
+    function saveData(key, data) {
+      localStorage.setItem(key, JSON.stringify(data));
+    }
+    function loadProjects() { return loadData("projects"); }
+    function saveProjects(projects) { saveData("projects", projects); }
+    function loadActions() { return loadData("actions"); }
+    function saveActions(actions) { saveData("actions", actions); }
+
+    // --- 画面遷移 ---
+    function navigateToHome() {
+      location.hash = "#/";
+      renderHome();
+    }
+    function navigateToProject(projectId) {
+      location.hash = "#/project/" + projectId;
+      renderProjectDetail(projectId);
+    }
+
+    // --- モーダル ---
+    function openModal(title, contentHtml) {
+      document.getElementById("modal-title").innerText = title;
+      document.getElementById("modal-body").innerHTML = contentHtml;
+      document.getElementById("modal-overlay").classList.remove("hidden");
+    }
+    function closeModal() {
+      document.getElementById("modal-overlay").classList.add("hidden");
+    }
+
+    // --- インポート・エクスポート ---
+    function exportData() {
+      const projects = loadProjects();
+      const actions = loadActions();
+      const data = { projects, actions };
+      const blob = new Blob([JSON.stringify(data, null, 2)], { type: "application/json" });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = "nextaction_data.json";
+      a.click();
+      URL.revokeObjectURL(url);
+    }
+    function openImportModal() {
+      const formHtml = `
+        <form id="import-form" class="space-y-4">
+          <div>
+            <label for="import-file" class="block text-sm font-medium">JSONファイルを選択</label>
+            <input type="file" id="import-file" accept="application/json" class="mt-2 block w-full rounded-md border border-gray-300 p-3" required />
+          </div>
+          <button class="bg-blue-500 hover:bg-blue-600 text-white py-3 px-6 rounded-full text-base" type="submit">インポート</button>
+        </form>
+      `;
+      openModal("データインポート", formHtml);
+      document.getElementById("import-form").addEventListener("submit", function(e) {
+        e.preventDefault();
+        const fileInput = document.getElementById("import-file");
+        if (!fileInput.files || fileInput.files.length === 0) return;
+        const file = fileInput.files[0];
+        const reader = new FileReader();
+        reader.onload = function(e) {
+          try {
+            const data = JSON.parse(e.target.result);
+            if (data.projects && data.actions) {
+              saveProjects(data.projects);
+              saveActions(data.actions);
+              closeModal();
+              renderHome();
+              alert("インポートに成功しました。");
+            } else {
+              alert("無効なJSONデータです。");
+            }
+          } catch (err) {
+            alert("JSONの解析に失敗しました。");
+          }
+        };
+        reader.readAsText(file);
+      });
+    }
+
+    // --- 並び替え ---
+    function toggleSortMode() {
+      sortMode = (sortMode === "manual") ? "duedate" : "manual";
+      document.getElementById("sortModeToggleBtn").innerText = (sortMode === "manual") ? "並び順：手動" : "並び順：期日順";
+      document.getElementById("dueDateOrderToggleBtn").classList.toggle("hidden", sortMode === "manual");
+      renderHome();
+    }
+    function toggleDueDateOrder() {
+      dueDateOrder = (dueDateOrder === "asc") ? "desc" : "asc";
+      document.getElementById("dueDateOrderToggleBtn").innerText = (dueDateOrder === "asc") ? "昇順" : "降順";
+      renderHome();
+    }
+
+    // --- ドラッグ＆ドロップ ---
+    function handleDragStart(e, projectId) {
+      draggedProjectId = projectId;
+      e.currentTarget.classList.add("dragging");
+      e.dataTransfer.effectAllowed = "move";
+    }
+    function handleDragOver(e) {
+      e.preventDefault();
+      e.dataTransfer.dropEffect = "move";
+    }
+    function handleDrop(e, targetProjectId) {
+      e.stopPropagation();
+      if (!draggedProjectId || draggedProjectId === targetProjectId) return;
+      if (sortMode === "manual") {
+        let projects = loadProjects();
+        const fromIndex = projects.findIndex(p => p.id === draggedProjectId);
+        const toIndex = projects.findIndex(p => p.id === targetProjectId);
+        if (fromIndex < 0 || toIndex < 0) return;
+        const [draggedProject] = projects.splice(fromIndex, 1);
+        projects.splice(toIndex, 0, draggedProject);
+        saveProjects(projects);
+        renderHome();
+      }
+      draggedProjectId = null;
+    }
+    function handleDragEnd(e) {
+      e.currentTarget.classList.remove("dragging");
+    }
+
+    // --- プルダウンメニュー ---
+    function toggleProjectDropdown(projectId) {
+      const dropdown = document.getElementById("dropdown-project-" + projectId);
+      if (dropdown) {
+        dropdown.classList.toggle("hidden");
+      }
+    }
+    function toggleTaskDropdown(taskId) {
+      const dropdown = document.getElementById("dropdown-task-" + taskId);
+      if (dropdown) {
+        dropdown.classList.toggle("hidden");
+      }
+    }
+
+    // --- 描画 ---
+    const contentEl = document.getElementById("content");
+    function renderHome() {
+      let projects = loadProjects();
+      const actions = loadActions();
+      if (sortMode === "duedate") {
+        projects.sort((a, b) => {
+          const aTasks = actions.filter(task => task.projectId === a.id && !task.completed);
+          const bTasks = actions.filter(task => task.projectId === b.id && !task.completed);
+          const aDue = aTasks.length ? Math.min(...aTasks.map(t => new Date(t.dueDate).getTime())) : Infinity;
+          const bDue = bTasks.length ? Math.min(...bTasks.map(t => new Date(t.dueDate).getTime())) : Infinity;
+          return (dueDateOrder === "asc") ? aDue - bDue : bDue - aDue;
+        });
+      }
+      
+      let html = `<h2 class="text-lg font-bold mb-6">プロジェクト一覧</h2>`;
+      if (projects.length === 0) {
+        html += `<p>プロジェクトはありません。</p>`;
+      } else {
+        html += `<ul class="divide-y divide-gray-300">`;
+        projects.forEach(project => {
+          const projectTasks = actions.filter(a => a.projectId === project.id && !a.completed);
+          // 背景：ネクストアクションがない場合は透明、存在する場合は白＋角丸＋影
+          const bgClass = (projectTasks.length === 0) ? "bg-transparent" : "bg-white rounded-md shadow";
+          html += `
+            <li id="project-${project.id}" class="py-4 px-6 ${bgClass}"
+              ${sortMode === "manual" ? 'draggable="true"' : ""}
+              ondragstart="handleDragStart(event, '${project.id}')"
+              ondragover="handleDragOver(event)"
+              ondrop="handleDrop(event, '${project.id}')"
+              ondragend="handleDragEnd(event)">
+              <!-- プロジェクトヘッダー -->
+              <div class="flex justify-between items-center">
+                <div>
+                  <p class="font-medium text-base">${project.name}</p>
+                </div>
+                <div class="flex items-center space-x-3 text-xs">
+                  <span class="text-black hover:underline cursor-pointer" onclick="navigateToProject('${project.id}')">詳細</span>
+                  <span class="text-black hover:underline cursor-pointer" onclick="toggleProjectDropdown('${project.id}')">操作 ▾</span>
+                  <button class="bg-blue-500 hover:bg-blue-600 text-white py-1 px-3 rounded-full text-sm" onclick="openTaskForm('${project.id}')">アクション追加</button>
+                  <!-- プロジェクト操作プルダウン -->
+                  <div id="dropdown-project-${project.id}" class="absolute right-6 mt-10 w-24 bg-white border border-gray-200 shadow-lg rounded-md hidden">
+                    <a href="#" onclick="openProjectEditForm('${project.id}'); toggleProjectDropdown('${project.id}'); return false;" class="block px-2 py-1 text-black text-xs hover:bg-gray-100">編集</a>
+                    <a href="#" onclick="deleteProject('${project.id}'); toggleProjectDropdown('${project.id}'); return false;" class="block px-2 py-1 text-black text-xs hover:bg-gray-100">削除</a>
+                  </div>
+                </div>
+              </div>
+              <!-- タスク一覧テーブル（左余白を大きく） -->
+              <div class="mt-4 ml-48">
+                ${
+                  projectTasks.length > 0 ?
+                  `<table class="w-full text-sm">
+                    <thead>
+                      <tr class="border-b border-gray-300">
+                        <th class="py-1 text-left w-64">タスク内容</th>
+                        <th class="py-1 text-left w-24">期日</th>
+                        <th class="py-1 text-left w-24">操作</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      ${projectTasks.map(task => {
+                        // 今日以前のタスクを赤字にする
+                        let overdueClass = "";
+                        if (task.dueDate) {
+                          const today = new Date();
+                          today.setHours(0,0,0,0);
+                          const due = new Date(task.dueDate);
+                          due.setHours(0,0,0,0);
+                          if (due <= today) {
+                            overdueClass = "text-red-500";
+                          }
+                        }
+                        return `
+                        <tr class="border-b border-gray-200 last:border-0 ${overdueClass}">
+                          <td class="py-1 w-64">${task.description}</td>
+                          <td class="py-1 w-24">${task.dueDate || "-"}</td>
+                          <td class="py-1 w-24">
+                            <span class="text-black text-xs cursor-pointer hover:underline" onclick="completeTask('${task.id}')">✓ 完了にする</span>
+                            <span class="text-black hover:underline cursor-pointer text-xs ml-2" onclick="toggleTaskDropdown('${task.id}')">操作 ▾</span>
+                            <div id="dropdown-task-${task.id}" class="absolute right-0 mt-6 w-24 bg-white border border-gray-200 shadow-lg rounded-md hidden">
+                              <a href="#" onclick="openTaskEditForm('${task.id}'); toggleTaskDropdown('${task.id}'); return false;" class="block px-2 py-1 text-black text-xs hover:bg-gray-100">編集</a>
+                              <a href="#" onclick="deleteTask('${task.id}'); toggleTaskDropdown('${task.id}'); return false;" class="block px-2 py-1 text-black text-xs hover:bg-gray-100">削除</a>
+                            </div>
+                          </td>
+                        </tr>
+                        `;
+                      }).join('')}
+                    </tbody>
+                  </table>` :
+                  `<p class="text-xs text-gray-600">アクティブなタスクはありません。</p>`
+                }
+              </div>
+            </li>
+          `;
+        });
+        html += `</ul>`;
+      }
+      contentEl.innerHTML = html;
+    }
+
+    // プロジェクト詳細ページ
+    function renderProjectDetail(projectId) {
+      const projects = loadProjects();
+      const project = projects.find(p => p.id === projectId);
+      if (!project) {
+        contentEl.innerHTML = `<p>プロジェクトが見つかりません。</p>`;
+        return;
+      }
+      const actions = loadActions().filter(a => a.projectId === projectId);
+      let html = `<h2 class="text-lg font-bold mb-6">プロジェクト詳細: ${project.name}</h2>`;
+      html += `
+        <div class="mb-4 space-x-3 text-xs">
+          <span class="text-black hover:underline cursor-pointer" onclick="openProjectEditForm('${project.id}')">プロジェクト編集</span>
+          <span class="text-black hover:underline cursor-pointer" onclick="deleteProject('${project.id}')">プロジェクト削除</span>
+        </div>
+      `;
+      html += `<h3 class="text-base font-bold mb-4">ネクストアクション一覧</h3>`;
+      html += `<button class="bg-blue-500 hover:bg-blue-600 text-white py-2 px-4 rounded-full text-base mb-6" onclick="openTaskForm('${project.id}')">アクション追加</button>`;
+      if (actions.length === 0) {
+        html += `<p>タスクはありません。</p>`;
+      } else {
+        html += `<table class="w-full text-sm">
+                   <thead>
+                     <tr class="border-b border-gray-300">
+                       <th class="py-1 text-left w-64">タスク内容</th>
+                       <th class="py-1 text-left w-24">期日</th>
+                       <th class="py-1 text-left w-24">操作</th>
+                     </tr>
+                   </thead>
+                   <tbody>
+                     ${actions.map(action => {
+                       let overdueClass = "";
+                       if (action.dueDate) {
+                         const today = new Date();
+                         today.setHours(0,0,0,0);
+                         const due = new Date(action.dueDate);
+                         due.setHours(0,0,0,0);
+                         if (due <= today) {
+                           overdueClass = "text-red-500";
+                         }
+                       }
+                       return `
+                         <tr class="border-b border-gray-200 last:border-0 ${overdueClass}">
+                           <td class="py-1 w-64">${action.description}</td>
+                           <td class="py-1 w-24">${action.dueDate || "-"}</td>
+                           <td class="py-1 w-24">
+                             ${!action.completed ? `<span class="text-black text-xs cursor-pointer hover:underline" onclick="completeTask('${action.id}')">✓ 完了にする</span>` : ""}
+                             <span class="text-black hover:underline cursor-pointer text-xs ml-2" onclick="toggleTaskDropdown('${action.id}')">操作 ▾</span>
+                             <div id="dropdown-task-${action.id}" class="absolute right-0 mt-6 w-24 bg-white border border-gray-200 shadow-lg rounded-md hidden">
+                               <a href="#" onclick="openTaskEditForm('${action.id}'); toggleTaskDropdown('${action.id}'); return false;" class="block px-2 py-1 text-black text-xs hover:bg-gray-100">編集</a>
+                               <a href="#" onclick="deleteTask('${action.id}'); toggleTaskDropdown('${action.id}'); return false;" class="block px-2 py-1 text-black text-xs hover:bg-gray-100">削除</a>
+                             </div>
+                           </td>
+                         </tr>
+                       `;
+                     }).join('')}
+                   </tbody>
+                 </table>`;
+      }
+      contentEl.innerHTML = html;
+    }
+
+    // --- プロジェクト関連フォーム ---
+    function openProjectForm() {
+      const formHtml = `
+        <form id="project-form" class="space-y-6">
+          <div>
+            <label for="project-name" class="block text-sm font-medium">プロジェクト名</label>
+            <input type="text" id="project-name" required class="mt-2 block w-full border border-gray-300 rounded-md p-3" />
+          </div>
+          <button class="bg-green-500 hover:bg-green-600 text-white py-3 px-6 rounded-full text-base" type="submit">登録</button>
+        </form>
+      `;
+      openModal("プロジェクト追加", formHtml);
+      document.getElementById("project-form").addEventListener("submit", function(e) {
+        e.preventDefault();
+        const name = document.getElementById("project-name").value.trim();
+        if (!name) return;
+        const projects = loadProjects();
+        projects.push({
+          id: generateId(),
+          name,
+          createdAt: new Date().toISOString()
+        });
+        saveProjects(projects);
+        closeModal();
+        renderHome();
+      });
+    }
+    
+    function openProjectEditForm(projectId) {
+      const projects = loadProjects();
+      const project = projects.find(p => p.id === projectId);
+      if (!project) return;
+      const formHtml = `
+        <form id="project-edit-form" class="space-y-6">
+          <div>
+            <label for="project-name-edit" class="block text-sm font-medium">プロジェクト名</label>
+            <input type="text" id="project-name-edit" value="${project.name}" required class="mt-2 block w-full border border-gray-300 rounded-md p-3" />
+          </div>
+          <button class="bg-blue-500 hover:bg-blue-600 text-white py-3 px-6 rounded-full text-base" type="submit">更新</button>
+        </form>
+      `;
+      openModal("プロジェクト編集", formHtml);
+      document.getElementById("project-edit-form").addEventListener("submit", function(e) {
+        e.preventDefault();
+        const name = document.getElementById("project-name-edit").value.trim();
+        if (!name) return;
+        project.name = name;
+        saveProjects(projects);
+        closeModal();
+        if (location.hash.startsWith("#/project/")) {
+          renderProjectDetail(projectId);
+        } else {
+          renderHome();
+        }
+      });
+    }
+    
+    function deleteProject(projectId) {
+      if (!confirm("プロジェクトを削除すると、関連タスクも削除されます。本当に削除してよろしいですか？")) return;
+      let projects = loadProjects();
+      projects = projects.filter(p => p.id !== projectId);
+      saveProjects(projects);
+      let actions = loadActions();
+      actions = actions.filter(a => a.projectId !== projectId);
+      saveActions(actions);
+      navigateToHome();
+    }
+
+    // --- タスク関連フォーム ---
+    function openTaskForm(projectId) {
+      const tomorrow = getTomorrowDate();
+      const formHtml = `
+        <form id="task-form" class="space-y-6">
+          <div>
+            <label for="task-desc" class="block text-sm font-medium">タスク内容</label>
+            <textarea id="task-desc" required class="mt-2 block w-full border border-gray-300 rounded-md p-3"></textarea>
+          </div>
+          <div>
+            <label for="task-due" class="block text-sm font-medium">期日 (日付入力またはテキスト)</label>
+            <input type="date" id="task-due" value="${tomorrow}" class="mt-2 block w-full border border-gray-300 rounded-md p-3" />
+            <input type="text" id="task-due-text" placeholder="例: 2025-03-01" class="mt-2 block w-full border border-gray-300 rounded-md p-3" />
+          </div>
+          <button class="bg-blue-500 hover:bg-blue-600 text-white py-3 px-6 rounded-full text-base" type="submit">登録</button>
+        </form>
+      `;
+      openModal("タスク追加", formHtml);
+      document.getElementById("task-form").addEventListener("submit", function(e) {
+        e.preventDefault();
+        const description = document.getElementById("task-desc").value.trim();
+        let dueDate = document.getElementById("task-due").value.trim();
+        if (!dueDate) {
+          dueDate = document.getElementById("task-due-text").value.trim();
+        }
+        if (!description) return;
+        const actions = loadActions();
+        actions.push({
+          id: generateId(),
+          projectId,
+          description,
+          dueDate,
+          completed: false,
+          createdAt: new Date().toISOString()
+        });
+        saveActions(actions);
+        closeModal();
+        if (location.hash.startsWith("#/project/")) {
+          renderProjectDetail(projectId);
+        } else {
+          renderHome();
+        }
+      });
+    }
+    
+    function openTaskEditForm(taskId) {
+      const actions = loadActions();
+      const action = actions.find(a => a.id === taskId);
+      if (!action) return;
+      const formHtml = `
+        <form id="task-edit-form" class="space-y-6">
+          <div>
+            <label for="task-desc-edit" class="block text-sm font-medium">タスク内容</label>
+            <textarea id="task-desc-edit" required class="mt-2 block w-full border border-gray-300 rounded-md p-3">${action.description}</textarea>
+          </div>
+          <div>
+            <label for="task-due-edit" class="block text-sm font-medium">期日 (日付入力またはテキスト)</label>
+            <input type="date" id="task-due-edit" value="${action.dueDate && action.dueDate.match(/^\d{4}-\d{2}-\d{2}$/) ? action.dueDate : ''}" class="mt-2 block w-full border border-gray-300 rounded-md p-3" />
+            <input type="text" id="task-due-edit-text" placeholder="例: 2025-03-01" value="${action.dueDate && !action.dueDate.match(/^\d{4}-\d{2}-\d{2}$/) ? action.dueDate : ''}" class="mt-2 block w-full border border-gray-300 rounded-md p-3" />
+          </div>
+          <button class="bg-blue-500 hover:bg-blue-600 text-white py-3 px-6 rounded-full text-base" type="submit">更新</button>
+        </form>
+      `;
+      openModal("タスク編集", formHtml);
+      document.getElementById("task-edit-form").addEventListener("submit", function(e) {
+        e.preventDefault();
+        const description = document.getElementById("task-desc-edit").value.trim();
+        let dueDate = document.getElementById("task-due-edit").value.trim();
+        if (!dueDate) {
+          dueDate = document.getElementById("task-due-edit-text").value.trim();
+        }
+        if (!description) return;
+        action.description = description;
+        action.dueDate = dueDate;
+        saveActions(actions);
+        closeModal();
+        if (location.hash.startsWith("#/project/")) {
+          renderProjectDetail(action.projectId);
+        } else {
+          renderHome();
+        }
+      });
+    }
+    
+    function deleteTask(taskId) {
+      if (!confirm("タスクを削除してよろしいですか？")) return;
+      let actions = loadActions();
+      const action = actions.find(a => a.id === taskId);
+      if (!action) return;
+      actions = actions.filter(a => a.id !== taskId);
+      saveActions(actions);
+      if (location.hash.startsWith("#/project/")) {
+        renderProjectDetail(action.projectId);
+      } else {
+        renderHome();
+      }
+    }
+    
+    function completeTask(taskId) {
+      let actions = loadActions();
+      const action = actions.find(a => a.id === taskId);
+      if (!action) return;
+      action.completed = true;
+      action.completedAt = new Date().toISOString();
+      saveActions(actions);
+      if (location.hash.startsWith("#/project/")) {
+        renderProjectDetail(action.projectId);
+      } else {
+        renderHome();
+      }
+    }
+    
+    // --- ルーティング ---
+    function router() {
+      const hash = location.hash;
+      if (!hash || hash === "#/") {
+        renderHome();
+      } else if (hash.startsWith("#/project/")) {
+        const projectId = hash.split("/")[2];
+        renderProjectDetail(projectId);
+      } else {
+        renderHome();
+      }
+    }
+    
+    window.addEventListener("hashchange", router);
+    window.addEventListener("load", router);
+  </script>
+</body>
+</html>
