@@ -39,14 +39,14 @@
         昇順
       </button>
     </div>
-    
+
     <!-- プロジェクト登録ボタン -->
     <div class="mb-8">
       <button class="bg-green-500 hover:bg-green-600 text-white py-3 px-6 rounded-full text-base" onclick="openProjectForm()">プロジェクト追加</button>
     </div>
-    
+
     <!-- プロジェクト一覧 -->
-    <div id="content" class="space-y-6"></div>
+    <div id="content"></div>
   </main>
 
   <!-- モーダル -->
@@ -227,88 +227,95 @@
           return (dueDateOrder === "asc") ? aDue - bDue : bDue - aDue;
         });
       }
-      
+
       let html = `<h2 class="text-lg font-bold mb-6">プロジェクト一覧</h2>`;
       if (projects.length === 0) {
         html += `<p>プロジェクトはありません。</p>`;
       } else {
-        html += `<ul class="divide-y divide-gray-300">`;
+        html += `<div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">`;
         projects.forEach(project => {
           const projectTasks = actions.filter(a => a.projectId === project.id && !a.completed);
-          // 背景：ネクストアクションがない場合は透明、存在する場合は白＋角丸＋影
-          const bgClass = (projectTasks.length === 0) ? "bg-transparent" : "bg-white rounded-md shadow";
+          // カード型スタイル
           html += `
-            <li id="project-${project.id}" class="py-4 px-6 ${bgClass}"
+            <div id="project-${project.id}" class="bg-white rounded-lg shadow-md overflow-hidden hover:shadow-lg transition-shadow duration-300"
               ${sortMode === "manual" ? 'draggable="true"' : ""}
               ondragstart="handleDragStart(event, '${project.id}')"
               ondragover="handleDragOver(event)"
               ondrop="handleDrop(event, '${project.id}')"
               ondragend="handleDragEnd(event)">
               <!-- プロジェクトヘッダー -->
-              <div class="flex justify-between items-center">
-                <div>
-                  <p class="font-medium text-base">${project.name}</p>
-                </div>
-                <div class="flex items-center space-x-3 text-xs">
-                  <span class="text-black hover:underline cursor-pointer" onclick="navigateToProject('${project.id}')">詳細</span>
-                  <span class="text-black hover:underline cursor-pointer" onclick="toggleProjectDropdown('${project.id}')">操作 ▾</span>
-                  <button class="bg-blue-500 hover:bg-blue-600 text-white py-1 px-3 rounded-full text-sm" onclick="openTaskForm('${project.id}')">アクション追加</button>
-                  <!-- プロジェクト操作プルダウン -->
-                  <div id="dropdown-project-${project.id}" class="absolute right-6 mt-10 w-24 bg-white border border-gray-200 shadow-lg rounded-md hidden">
-                    <a href="#" onclick="openProjectEditForm('${project.id}'); toggleProjectDropdown('${project.id}'); return false;" class="block px-2 py-1 text-black text-xs hover:bg-gray-100">編集</a>
-                    <a href="#" onclick="deleteProject('${project.id}'); toggleProjectDropdown('${project.id}'); return false;" class="block px-2 py-1 text-black text-xs hover:bg-gray-100">削除</a>
+              <div class="bg-gray-50 px-4 py-3 border-b">
+                <div class="flex justify-between items-center">
+                  <h3 class="font-medium text-lg truncate">${project.name}</h3>
+                  <div class="flex items-center space-x-2">
+                    <button class="text-gray-600 hover:text-gray-900" onclick="toggleProjectDropdown('${project.id}')">
+                      <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" viewBox="0 0 20 20" fill="currentColor">
+                        <path d="M10 6a2 2 0 110-4 2 2 0 010 4zM10 12a2 2 0 110-4 2 2 0 010 4zM10 18a2 2 0 110-4 2 2 0 010 4z" />
+                      </svg>
+                    </button>
+                    <!-- プロジェクト操作プルダウン -->
+                    <div id="dropdown-project-${project.id}" class="absolute right-0 mt-8 w-36 bg-white border border-gray-200 shadow-lg rounded-md hidden z-10">
+                      <a href="#" onclick="navigateToProject('${project.id}'); return false;" class="block px-4 py-2 text-sm text-gray-700 hover:bg-gray-100">詳細</a>
+                      <a href="#" onclick="openProjectEditForm('${project.id}'); toggleProjectDropdown('${project.id}'); return false;" class="block px-4 py-2 text-sm text-gray-700 hover:bg-gray-100">編集</a>
+                      <a href="#" onclick="deleteProject('${project.id}'); toggleProjectDropdown('${project.id}'); return false;" class="block px-4 py-2 text-sm text-gray-700 hover:bg-gray-100">削除</a>
+                    </div>
                   </div>
                 </div>
               </div>
-              <!-- タスク一覧テーブル（左余白を大きく） -->
-              <div class="mt-4 ml-48">
+
+              <!-- タスク一覧 -->
+              <div class="p-4">
                 ${
                   projectTasks.length > 0 ?
-                  `<table class="w-full text-sm">
-                    <thead>
-                      <tr class="border-b border-gray-300">
-                        <th class="py-1 text-left w-64">タスク内容</th>
-                        <th class="py-1 text-left w-24">期日</th>
-                        <th class="py-1 text-left w-24">操作</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      ${projectTasks.map(task => {
-                        // 今日以前のタスクを赤字にする
-                        let overdueClass = "";
-                        if (task.dueDate) {
-                          const today = new Date();
-                          today.setHours(0,0,0,0);
-                          const due = new Date(task.dueDate);
-                          due.setHours(0,0,0,0);
-                          if (due <= today) {
-                            overdueClass = "text-red-500";
-                          }
+                  `<ul class="divide-y divide-gray-200">
+                    ${projectTasks.slice(0, 3).map(task => {
+                      // 今日以前のタスクを赤字にする
+                      let overdueClass = "";
+                      if (task.dueDate) {
+                        const today = new Date();
+                        today.setHours(0,0,0,0);
+                        const due = new Date(task.dueDate);
+                        due.setHours(0,0,0,0);
+                        if (due <= today) {
+                          overdueClass = "text-red-500";
                         }
-                        return `
-                        <tr class="border-b border-gray-200 last:border-0 ${overdueClass}">
-                          <td class="py-1 w-64">${task.description}</td>
-                          <td class="py-1 w-24">${task.dueDate || "-"}</td>
-                          <td class="py-1 w-24">
-                            <span class="text-black text-xs cursor-pointer hover:underline" onclick="completeTask('${task.id}')">✓ 完了にする</span>
-                            <span class="text-black hover:underline cursor-pointer text-xs ml-2" onclick="toggleTaskDropdown('${task.id}')">操作 ▾</span>
-                            <div id="dropdown-task-${task.id}" class="absolute right-0 mt-6 w-24 bg-white border border-gray-200 shadow-lg rounded-md hidden">
-                              <a href="#" onclick="openTaskEditForm('${task.id}'); toggleTaskDropdown('${task.id}'); return false;" class="block px-2 py-1 text-black text-xs hover:bg-gray-100">編集</a>
-                              <a href="#" onclick="deleteTask('${task.id}'); toggleTaskDropdown('${task.id}'); return false;" class="block px-2 py-1 text-black text-xs hover:bg-gray-100">削除</a>
+                      }
+                      return `
+                      <li class="py-2 ${overdueClass}">
+                        <div class="flex justify-between">
+                          <p class="text-sm truncate w-3/4">${task.description}</p>
+                          <div class="flex items-center space-x-2">
+                            <span class="text-xs text-gray-500">${task.dueDate || "-"}</span>
+                            <button class="text-gray-500 hover:text-gray-700" onclick="toggleTaskDropdown('${task.id}')">
+                              <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" viewBox="0 0 20 20" fill="currentColor">
+                                <path d="M10 6a2 2 0 110-4 2 2 0 010 4zM10 12a2 2 0 110-4 2 2 0 010 4zM10 18a2 2 0 110-4 2 2 0 010 4z" />
+                              </svg>
+                            </button>
+                            <div id="dropdown-task-${task.id}" class="absolute right-0 mt-8 w-36 bg-white border border-gray-200 shadow-lg rounded-md hidden z-10">
+                              <a href="#" onclick="completeTask('${task.id}'); return false;" class="block px-4 py-2 text-sm text-gray-700 hover:bg-gray-100">完了にする</a>
+                              <a href="#" onclick="openTaskEditForm('${task.id}'); toggleTaskDropdown('${task.id}'); return false;" class="block px-4 py-2 text-sm text-gray-700 hover:bg-gray-100">編集</a>
+                              <a href="#" onclick="deleteTask('${task.id}'); toggleTaskDropdown('${task.id}'); return false;" class="block px-4 py-2 text-sm text-gray-700 hover:bg-gray-100">削除</a>
                             </div>
-                          </td>
-                        </tr>
-                        `;
-                      }).join('')}
-                    </tbody>
-                  </table>` :
-                  `<p class="text-xs text-gray-600">アクティブなタスクはありません。</p>`
+                          </div>
+                        </div>
+                      </li>
+                      `;
+                    }).join('')}
+                    ${projectTasks.length > 3 ? `<li class="py-2 text-center"><span class="text-xs text-blue-500 hover:underline cursor-pointer" onclick="navigateToProject('${project.id}')">他 ${projectTasks.length - 3} 件のタスクを表示</span></li>` : ''}
+                  </ul>` :
+                  `<p class="text-sm text-gray-500 py-2">アクティブなタスクはありません</p>`
                 }
               </div>
-            </li>
+
+              <!-- カードフッター -->
+              <div class="bg-gray-50 px-4 py-3 border-t flex justify-between items-center">
+                <span class="text-xs text-gray-500">${projectTasks.length}件のタスク</span>
+                <button class="bg-blue-500 hover:bg-blue-600 text-white py-1 px-3 rounded-full text-xs" onclick="openTaskForm('${project.id}')">アクション追加</button>
+              </div>
+            </div>
           `;
         });
-        html += `</ul>`;
+        html += `</div>`;
       }
       contentEl.innerHTML = html;
     }
@@ -322,55 +329,64 @@
         return;
       }
       const actions = loadActions().filter(a => a.projectId === projectId);
-      let html = `<h2 class="text-lg font-bold mb-6">プロジェクト詳細: ${project.name}</h2>`;
-      html += `
-        <div class="mb-4 space-x-3 text-xs">
-          <span class="text-black hover:underline cursor-pointer" onclick="openProjectEditForm('${project.id}')">プロジェクト編集</span>
-          <span class="text-black hover:underline cursor-pointer" onclick="deleteProject('${project.id}')">プロジェクト削除</span>
+
+      let html = `
+        <div class="mb-6 flex items-center justify-between">
+          <h2 class="text-xl font-bold">プロジェクト詳細: ${project.name}</h2>
+          <div class="flex space-x-3">
+            <button class="bg-blue-500 hover:bg-blue-600 text-white py-2 px-4 rounded-full text-sm" onclick="openProjectEditForm('${project.id}')">編集</button>
+            <button class="bg-red-500 hover:bg-red-600 text-white py-2 px-4 rounded-full text-sm" onclick="deleteProject('${project.id}')">削除</button>
+            <button class="bg-green-500 hover:bg-green-600 text-white py-2 px-4 rounded-full text-sm" onclick="openTaskForm('${project.id}')">アクション追加</button>
+          </div>
         </div>
       `;
-      html += `<h3 class="text-base font-bold mb-4">ネクストアクション一覧</h3>`;
-      html += `<button class="bg-blue-500 hover:bg-blue-600 text-white py-2 px-4 rounded-full text-base mb-6" onclick="openTaskForm('${project.id}')">アクション追加</button>`;
+
       if (actions.length === 0) {
-        html += `<p>タスクはありません。</p>`;
+        html += `<div class="bg-white rounded-lg shadow-md p-6"><p>タスクはありません。</p></div>`;
       } else {
-        html += `<table class="w-full text-sm">
-                   <thead>
-                     <tr class="border-b border-gray-300">
-                       <th class="py-1 text-left w-64">タスク内容</th>
-                       <th class="py-1 text-left w-24">期日</th>
-                       <th class="py-1 text-left w-24">操作</th>
-                     </tr>
-                   </thead>
-                   <tbody>
-                     ${actions.map(action => {
-                       let overdueClass = "";
-                       if (action.dueDate) {
-                         const today = new Date();
-                         today.setHours(0,0,0,0);
-                         const due = new Date(action.dueDate);
-                         due.setHours(0,0,0,0);
-                         if (due <= today) {
-                           overdueClass = "text-red-500";
-                         }
-                       }
-                       return `
-                         <tr class="border-b border-gray-200 last:border-0 ${overdueClass}">
-                           <td class="py-1 w-64">${action.description}</td>
-                           <td class="py-1 w-24">${action.dueDate || "-"}</td>
-                           <td class="py-1 w-24">
-                             ${!action.completed ? `<span class="text-black text-xs cursor-pointer hover:underline" onclick="completeTask('${action.id}')">✓ 完了にする</span>` : ""}
-                             <span class="text-black hover:underline cursor-pointer text-xs ml-2" onclick="toggleTaskDropdown('${action.id}')">操作 ▾</span>
-                             <div id="dropdown-task-${action.id}" class="absolute right-0 mt-6 w-24 bg-white border border-gray-200 shadow-lg rounded-md hidden">
-                               <a href="#" onclick="openTaskEditForm('${action.id}'); toggleTaskDropdown('${action.id}'); return false;" class="block px-2 py-1 text-black text-xs hover:bg-gray-100">編集</a>
-                               <a href="#" onclick="deleteTask('${action.id}'); toggleTaskDropdown('${action.id}'); return false;" class="block px-2 py-1 text-black text-xs hover:bg-gray-100">削除</a>
-                             </div>
-                           </td>
-                         </tr>
-                       `;
-                     }).join('')}
-                   </tbody>
-                 </table>`;
+        html += `<div class="bg-white rounded-lg shadow-md overflow-hidden">
+          <div class="px-6 py-4 border-b border-gray-200">
+            <h3 class="text-lg font-medium">ネクストアクション一覧</h3>
+          </div>
+          <div class="divide-y divide-gray-200">
+            ${actions.map(action => {
+              let overdueClass = "";
+              if (action.dueDate) {
+                const today = new Date();
+                today.setHours(0,0,0,0);
+                const due = new Date(action.dueDate);
+                due.setHours(0,0,0,0);
+                if (due <= today) {
+                  overdueClass = "text-red-500";
+                }
+              }
+              return `
+                <div class="px-6 py-4 flex justify-between items-center ${overdueClass} ${action.completed ? 'bg-gray-50' : ''}">
+                  <div class="flex-1">
+                    <p class="text-sm ${action.completed ? 'line-through text-gray-500' : ''}">${action.description}</p>
+                    <p class="text-xs text-gray-500 mt-1">期日: ${action.dueDate || "未設定"}</p>
+                  </div>
+                  <div class="flex items-center space-x-3">
+                    ${!action.completed ? `<button class="text-green-500 hover:text-green-700" onclick="completeTask('${action.id}')">
+                      <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" viewBox="0 0 20 20" fill="currentColor">
+                        <path fill-rule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clip-rule="evenodd" />
+                      </svg>
+                    </button>` : ''}
+                    <button class="text-gray-500 hover:text-gray-700" onclick="toggleTaskDropdown('${action.id}')">
+                      <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" viewBox="0 0 20 20" fill="currentColor">
+                        <path d="M10 6a2 2 0 110-4 2 2 0 010 4zM10 12a2 2 0 110-4 2 2 0 010 4zM10 18a2 2 0 110-4 2 2 0 010 4z" />
+                      </svg>
+                    </button>
+                    <div id="dropdown-task-${action.id}" class="absolute right-0 mt-8 w-36 bg-white border border-gray-200 shadow-lg rounded-md hidden z-10">
+                      <a href="#" onclick="openTaskEditForm('${action.id}'); toggleTaskDropdown('${action.id}'); return false;" class="block px-4 py-2 text-sm text-gray-700 hover:bg-gray-100">編集</a>
+                      <a href="#" onclick="deleteTask('${action.id}'); toggleTaskDropdown('${action.id}'); return false;" class="block px-4 py-2 text-sm text-gray-700 hover:bg-gray-100">削除</a>
+                    </div>
+                  </div>
+                </div>
+              `;
+            }).join('')}
+          </div>
+        </div>`;
       }
       contentEl.innerHTML = html;
     }
@@ -402,7 +418,7 @@
         renderHome();
       });
     }
-    
+
     function openProjectEditForm(projectId) {
       const projects = loadProjects();
       const project = projects.find(p => p.id === projectId);
@@ -431,7 +447,7 @@
         }
       });
     }
-    
+
     function deleteProject(projectId) {
       if (!confirm("プロジェクトを削除すると、関連タスクも削除されます。本当に削除してよろしいですか？")) return;
       let projects = loadProjects();
@@ -487,7 +503,7 @@
         }
       });
     }
-    
+
     function openTaskEditForm(taskId) {
       const actions = loadActions();
       const action = actions.find(a => a.id === taskId);
@@ -526,7 +542,7 @@
         }
       });
     }
-    
+
     function deleteTask(taskId) {
       if (!confirm("タスクを削除してよろしいですか？")) return;
       let actions = loadActions();
@@ -540,7 +556,7 @@
         renderHome();
       }
     }
-    
+
     function completeTask(taskId) {
       let actions = loadActions();
       const action = actions.find(a => a.id === taskId);
@@ -554,7 +570,7 @@
         renderHome();
       }
     }
-    
+
     // --- ルーティング ---
     function router() {
       const hash = location.hash;
@@ -567,7 +583,7 @@
         renderHome();
       }
     }
-    
+
     window.addEventListener("hashchange", router);
     window.addEventListener("load", router);
   </script>
